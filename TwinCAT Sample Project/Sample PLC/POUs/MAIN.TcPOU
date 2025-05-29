@@ -1,0 +1,117 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <POU Name="MAIN" Id="{33d1c519-30ff-408e-bed0-0fed9149ed9d}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	fbTcFormsLicense	: Tc3_TcForms.FB_License;
+	
+	i					: INT;
+	rsEnable			: RS;
+	tonEnable			: TON;
+	tofEnable			: TOF;
+
+	fbGripper			: FB_Gripper;
+	
+	nCnt 			: INT;
+	nCalc 			: INT;
+	
+	rsTest			: RS;
+	tonTest			: TON;
+	tofTest			: TOF;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// TcForms License
+fbTcFormsLicense(bExecute:=TRUE);
+
+// Global Enable
+rsEnable(SET:=GVL.stEnable.bSet, RESET1:=GVL.stEnable.bReset, Q1=>GVL.bEnable);
+tonEnable(IN:=GVL.bEnable, PT:=T#1S);
+tofEnable(IN:=GVL.bEnable, PT:=T#1S);
+GVL.stStatus.bDone := GVL.stEnable.bSet OR GVL.stEnable.bReset;
+GVL.stStatus.bBusy := GVL.bEnable;
+GVL.stStatus.bOn := TRUE;
+GVL.stStatus.bOff := TRUE;
+FOR i:=1 TO 3 DO
+	GVL.aAxisPowerEnable[i] S= GVL.stEnable.bSet;
+	GVL.aAxisPowerEnable[i] R= GVL.stEnable.bReset;
+	GVL.stStatus.bOn := GVL.stStatus.bOn AND GVL.aAxisPowerState[i].bStatus;
+	GVL.stStatus.bOff := GVL.stStatus.bOff AND NOT GVL.aAxisPowerState[i].bStatus;
+END_FOR
+GVL.bAirSupply S= GVL.stEnable.bSet;
+GVL.bAirSupply R= GVL.stEnable.bReset;
+GVL.stStatus.bOn := GVL.stStatus.bOn AND GVL.bAirSupply;
+GVL.stStatus.bOff := GVL.stStatus.bOff AND NOT GVL.bAirSupply;
+GVL.stStatus.bError := (tonEnable.Q AND NOT GVL.stStatus.bOn) OR (NOT tofEnable.Q AND NOT GVL.stStatus.bOff);
+// -----------------------------------------------------------------
+
+// Automatic
+PRG_Automatic();
+// -----------------------------------------------------------------
+
+// NC PTP
+PRG_NC_PTP();
+// -----------------------------------------------------------------
+
+// Gripper
+fbGripper(bAirSupply:=GVL.bAirSupply, stCtrl:=GVL.stGripperCtrl, stState=>GVL.stGripperState);
+IF GVL.stGripperState.bOn THEN
+	GVL.nGripperState := 2;
+ELSIF GVL.stGripperState.bOff THEN
+	GVL.nGripperState := 1;
+ELSE
+	GVL.nGripperState := 0;
+END_IF
+// -----------------------------------------------------------------
+
+// Global Error / Error Reset
+GVL.bError := GVL.stStatus.bError OR
+			  GVL.aAxisStatus[1].bError OR GVL.aAxisStatus[2].bError OR GVL.aAxisStatus[3].bError OR			  
+			  GVL.aAxisPowerState[1].bError OR GVL.aAxisPowerState[2].bError OR GVL.aAxisPowerState[3].bError OR
+			  GVL.aMoveAbsState[1].bError OR GVL.aMoveAbsState[2].bError OR GVL.aMoveAbsState[3].bError OR
+			  GVL.stProgramState.bError OR
+			  GVL.stGripperState.bError;
+			  
+GVL.bReset := FALSE;
+
+
+
+
+
+nCnt := nCnt + 1;
+GVL.bTest := GVL.bTest;
+GVL.nTestDint := GVL.nTestDint;
+GVL.fTestLreal := GVL.fTestLreal;	
+	
+rsTest(SET:=GVL.stTestCtrl.bSet,RESET1:=GVL.stTestCtrl.bReset,Q1=>GVL.stTestState.bBusy);
+GVL.stTestState.bDone := GVL.stTestCtrl.bSet OR GVL.stTestCtrl.bReset;
+tonTest(IN:=rsTest.Q1,PT:=T#2S);
+tofTest(IN:=rsTest.Q1,PT:=T#2S);
+GVL.stTestState.bOn := tonTest.Q;
+GVL.stTestState.bOff := NOT tofTest.Q;
+
+
+	
+	]]></ST>
+    </Implementation>
+    <LineIds Name="MAIN">
+      <LineId Id="288" Count="2" />
+      <LineId Id="294" Count="30" />
+      <LineId Id="358" Count="1" />
+      <LineId Id="361" Count="1" />
+      <LineId Id="364" Count="0" />
+      <LineId Id="363" Count="0" />
+      <LineId Id="360" Count="0" />
+      <LineId Id="325" Count="1" />
+      <LineId Id="389" Count="1" />
+      <LineId Id="419" Count="0" />
+      <LineId Id="400" Count="0" />
+      <LineId Id="393" Count="0" />
+      <LineId Id="398" Count="1" />
+      <LineId Id="422" Count="0" />
+      <LineId Id="329" Count="9" />
+      <LineId Id="348" Count="9" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

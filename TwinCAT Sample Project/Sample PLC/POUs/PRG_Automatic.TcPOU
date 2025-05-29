@@ -1,0 +1,321 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <POU Name="PRG_Automatic" Id="{738e971c-cbb0-4d55-88ba-bb46eb819197}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM PRG_Automatic
+VAR
+	nState				: INT;
+	rtExecute			: R_TRIG;
+	rtAbort				: R_TRIG;
+	nNumberOfParts		: INT;
+	nCounter			: INT;
+	i					: INT;
+	bNotBusy			: BOOL;
+	bError				: bool;
+END_VAR
+VAR CONSTANT
+	Z_UP				: LREAL := 200.0;
+	Z_DOWN				: LREAL := 0.0;
+	X1					: LREAL := 500.0;
+	Y1					: LREAL := 500.0;
+	X2					: LREAL := -300.0;
+	Y2					: LREAL := -300.0;
+	NUMBER_OF_PARTS		: ARRAY[0..2] OF INT := [3, 5, 10];
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[rtExecute(CLK:=GVL.stProgramCtrl.bExecute);
+rtAbort(CLK:=GVL.stProgramCtrl.bAbort);
+GVL.stProgramCtrl.bExecute R= GVL.bReset;
+GVL.stProgramCtrl.bAbort R= GVL.bReset;
+IF nState>0 AND (rtAbort.Q OR GVL.bReset OR GVL.bError) THEN
+	bError := GVL.bError;
+	nState := -1;
+END_IF
+
+CASE nState OF
+	-1:		// Abort
+		bNotBusy := TRUE;	
+		FOR i:=1 TO 3 DO
+			GVL.aMoveAbsCtrl[i].bAbort := TRUE;
+			bNotBusy := bNotBusy AND NOT GVL.aMoveAbsState[i].bBusy;
+		END_FOR
+		IF bNotBusy THEN
+			FOR i:=1 TO 3 DO
+				GVL.aMoveAbsCtrl[i].bExecute := FALSE;
+				GVL.aMoveAbsCtrl[i].bAbort := FALSE;
+			END_FOR
+			GVL.stProgramState.bBusy := FALSE;
+			GVL.stProgramState.bAborted := NOT bError;
+			GVL.stProgramState.bError := bError;
+			nState := 0;
+		END_IF
+		
+	0:		// Idle
+		IF rtExecute.Q THEN
+			nNumberOfParts := NUMBER_OF_PARTS[GVL.nProgramNo];
+			nCounter := 0;
+			GVL.stProgramState.bBusy := TRUE;
+			nState := nState + 1;
+		ELSIF NOT GVL.stProgramCtrl.bExecute THEN
+			bError := FALSE;
+			GVL.stProgramState.nErrorId := 0;
+			GVL.stProgramState.bError := FALSE;
+			GVL.stProgramState.bBusy := FALSE;
+			GVL.stProgramState.bAborted := FALSE;
+			GVL.stProgramState.bDone := FALSE;
+		END_IF
+		
+	1:		// Open Gripper
+		GVL.stGripperCtrl.bReset := TRUE;
+		IF GVL.stGripperState.bDone AND GVL.stGripperState.bOff THEN
+			GVL.stGripperCtrl.bReset := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.stGripperState.bError THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	2:		// Move Z up
+		GVL.aTargetPos[3] := Z_UP;
+		GVL.aMoveAbsCtrl[3].bExecute := TRUE;
+		IF GVL.aMoveAbsState[3].bDone THEN
+			GVL.aMoveAbsCtrl[3].bExecute := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.aMoveAbsState[3].bError OR GVL.aMoveAbsState[3].bAborted THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	3:		// Move to Pos 1
+		GVL.aTargetPos[1] := X1;
+		GVL.aTargetPos[2] := Y1;
+		GVL.aMoveAbsCtrl[1].bExecute := TRUE;
+		GVL.aMoveAbsCtrl[2].bExecute := TRUE;
+		IF GVL.aMoveAbsState[1].bDone AND GVL.aMoveAbsState[2].bDone THEN
+			GVL.aMoveAbsCtrl[1].bExecute := FALSE;
+			GVL.aMoveAbsCtrl[2].bExecute := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.aMoveAbsState[1].bError OR GVL.aMoveAbsState[1].bAborted OR 
+			  GVL.aMoveAbsState[2].bError OR GVL.aMoveAbsState[2].bAborted THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	4:		// Move Z down
+		GVL.aTargetPos[3] := Z_DOWN;
+		GVL.aMoveAbsCtrl[3].bExecute := TRUE;
+		IF GVL.aMoveAbsState[3].bDone THEN
+			GVL.aMoveAbsCtrl[3].bExecute := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.aMoveAbsState[3].bError OR GVL.aMoveAbsState[3].bAborted THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	5:		// Close Gripper
+		GVL.stGripperCtrl.bSet := TRUE;
+		IF GVL.stGripperState.bDone AND GVL.stGripperState.bOn THEN
+			GVL.stGripperCtrl.bSet := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.stGripperState.bError THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	6:		// Move Z up
+		GVL.aTargetPos[3] := Z_UP;
+		GVL.aMoveAbsCtrl[3].bExecute := TRUE;
+		IF GVL.aMoveAbsState[3].bDone THEN
+			GVL.aMoveAbsCtrl[3].bExecute := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.aMoveAbsState[3].bError OR GVL.aMoveAbsState[3].bAborted THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	7:		// Move to Pos 2
+		GVL.aTargetPos[1] := X2;
+		GVL.aTargetPos[2] := Y2;
+		GVL.aMoveAbsCtrl[1].bExecute := TRUE;
+		GVL.aMoveAbsCtrl[2].bExecute := TRUE;
+		IF GVL.aMoveAbsState[1].bDone AND GVL.aMoveAbsState[2].bDone THEN
+			GVL.aMoveAbsCtrl[1].bExecute := FALSE;
+			GVL.aMoveAbsCtrl[2].bExecute := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.aMoveAbsState[1].bError OR GVL.aMoveAbsState[1].bAborted OR 
+			  GVL.aMoveAbsState[2].bError OR GVL.aMoveAbsState[2].bAborted THEN			
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	8:		// Move Z down
+		GVL.aTargetPos[3] := Z_DOWN;
+		GVL.aMoveAbsCtrl[3].bExecute := TRUE;
+		IF GVL.aMoveAbsState[3].bDone THEN
+			GVL.aMoveAbsCtrl[3].bExecute := FALSE;
+			nState := nState + 1;
+		ELSIF GVL.aMoveAbsState[3].bError OR GVL.aMoveAbsState[3].bAborted THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	9:		// Open Gripper
+		GVL.stGripperCtrl.bReset := TRUE;
+		IF GVL.stGripperState.bDone AND GVL.stGripperState.bOff THEN
+			GVL.stGripperCtrl.bReset := FALSE;
+			nState := nState + 1;
+			nCounter := nCounter + 1;
+		ELSIF GVL.stGripperState.bError THEN
+			bError := TRUE;
+			GVL.stProgramState.nErrorId := INT_TO_UDINT(nState);
+			nState := -1;
+		END_IF
+		
+	10:
+		IF nCounter = nNumberOfParts THEN
+			GVL.stProgramState.bBusy := FALSE;
+			GVL.stProgramState.bDone := TRUE;
+			nState := 0;
+		ELSE
+			nState := 1;
+		END_IF
+		
+	
+END_CASE
+
+GVL.nProgramStep := nState + 1;
+
+IF GVL.stProgramState.bError THEN
+	GVL.nProgramState := 4;
+ELSIF GVL.stProgramState.bAborted THEN
+	GVL.nProgramState := 3;
+ELSIF GVL.stProgramState.bDone THEN
+	GVL.nProgramState := 2;
+ELSIF GVL.stProgramState.bBusy THEN
+	GVL.nProgramState := 1;
+ELSE
+	GVL.nProgramState := 0;
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="PRG_Automatic">
+      <LineId Id="13" Count="0" />
+      <LineId Id="172" Count="0" />
+      <LineId Id="306" Count="1" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="182" Count="1" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="184" Count="0" />
+      <LineId Id="192" Count="0" />
+      <LineId Id="185" Count="0" />
+      <LineId Id="187" Count="0" />
+      <LineId Id="193" Count="0" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="197" Count="0" />
+      <LineId Id="206" Count="0" />
+      <LineId Id="198" Count="0" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="257" Count="4" />
+      <LineId Id="178" Count="0" />
+      <LineId Id="28" Count="2" />
+      <LineId Id="33" Count="2" />
+      <LineId Id="238" Count="1" />
+      <LineId Id="241" Count="2" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="38" Count="1" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="207" Count="0" />
+      <LineId Id="236" Count="1" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="58" Count="1" />
+      <LineId Id="67" Count="1" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="64" Count="2" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="234" Count="1" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="73" Count="5" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="232" Count="1" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="81" Count="4" />
+      <LineId Id="244" Count="3" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="88" Count="5" />
+      <LineId Id="217" Count="0" />
+      <LineId Id="230" Count="1" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="96" Count="8" />
+      <LineId Id="214" Count="1" />
+      <LineId Id="228" Count="1" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="107" Count="5" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="115" Count="4" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="248" Count="3" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="120" Count="1" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="122" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="179" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="137" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="147" Count="7" />
+      <LineId Id="146" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

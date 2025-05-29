@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <POU Name="FB_Gripper" Id="{37db5731-0918-4f96-baf8-829fb750b563}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Gripper
+VAR_INPUT
+	bAirSupply	: BOOL;
+	stCtrl		: Tc3_TcForms.ST_SetResetCtrl;
+END_VAR
+VAR_OUTPUT
+	stState		: Tc3_TcForms.ST_SetResetState;
+END_VAR
+VAR
+	rsGripper			: RS;
+	tonGripper			: TON;
+	tofGripper			: TOF;
+	tonError			: TON;
+	rtErrorAck			: R_TRIG;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[rsGripper(SET:=stCtrl.bSet,RESET1:=stCtrl.bReset,Q1=>stState.bBusy);
+tonGripper(IN:=rsGripper.Q1 AND bAirSupply,PT:=T#1S);
+tofGripper(IN:=rsGripper.Q1 AND bAirSupply,PT:=T#1S);
+stState.bOn := tonGripper.Q;
+stState.bOff := NOT tofGripper.Q;
+tonError(IN:=(stState.bBusy AND stState.bOff) OR (NOT stState.bBusy AND stState.bOn),PT:=T#2S,Q=>stState.bError);
+stState.bDone := stCtrl.bSet OR stCtrl.bReset;
+rtErrorAck(CLK:=stState.bDone);
+IF rtErrorAck.Q THEN
+	tonError(IN:=FALSE);
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Gripper">
+      <LineId Id="75" Count="2" />
+      <LineId Id="79" Count="1" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="103" Count="3" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>
