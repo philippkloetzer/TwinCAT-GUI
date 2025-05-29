@@ -1,2 +1,2 @@
 # TwinCAT-GUI
-Simple WinForms GUI / HMI for TwinCAT PLC
+Simple WinForms GUI / HMI for TwinCAT.
